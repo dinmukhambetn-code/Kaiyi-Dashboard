@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>KAIYI Kazakhstan Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f0f0; }
+  .app { max-width: 480px; margin: 0 auto; min-height: 100vh; background: #f0f0f0; }
+  .header { background: #e31e24; padding: 16px; color: white; position: sticky; top: 0; z-index: 10; }
+  .header h1 { font-size: 17px; font-weight: 600; }
+  .header p { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+  .nav { display: flex; background: white; border-bottom: 0.5px solid #e0e0e0; position: sticky; top: 56px; z-index: 10; }
+  .nav button { flex: 1; padding: 11px 4px; font-size: 11px; border: none; background: none; cursor: pointer; color: #888; font-family: inherit; }
+  .nav button.active { color: #e31e24; border-bottom: 2px solid #e31e24; font-weight: 600; }
+  .content { padding: 12px; padding-bottom: 32px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .metric-card { background: white; border-radius: 12px; padding: 12px; }
+  .metric-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .metric-value { font-size: 24px; font-weight: 600; color: #1a1a1a; }
+  .metric-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+  .metric-value.green { color: #2e7d32; }
+  .metric-value.red { color: #e31e24; }
+  .card { background: white; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .card-title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 10px; }
+  .dealer-card { background: white; border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+  .dealer-name { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .badge { font-size: 10px; padding: 2px 8px; border-radius: 20px; }
+  .badge.green { background: #e8f5e9; color: #2e7d32; }
+  .badge.red { background: #ffebee; color: #c62828; }
+  .badge.gray { background: #f5f5f5; color: #666; }
+  .dealer-row { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-bottom: 4px; }
+  .dealer-row span:last-child { font-weight: 500; color: #1a1a1a; }
+  .progress-bar { height: 4px; background: #f0f0f0; border-radius: 2px; margin-top: 8px; }
+  .progress-fill { height: 100%; border-radius: 2px; background: #e31e24; transition: width 0.5s; }
+  .top-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 0.5px solid #f5f5f5; }
+  .top-item:last-child { border-bottom: none; }
+  .top-num { font-size: 14px; width: 24px; }
+  .top-name { flex: 1; font-size: 12px; color: #333; }
+  .top-val { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+  .who-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 0.5px solid #f5f5f5; font-size: 13px; color: #333; }
+  .who-item:last-child { border-bottom: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot.green { background: #2e7d32; }
+  .dot.red { background: #e31e24; }
+  .loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
+  .plan-bar { margin-bottom: 8px; }
+  .plan-bar-label { display: flex; justify-content: space-between; font-size: 11px; color: #666; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>KAIYI Kazakhstan</h1>
+    <p id="header-date">Загрузка данных...</p>
+  </div>
+  <div class="nav">
+    <button class="active" onclick="showTab('summary', this)">Сводка</button>
+    <button onclick="showTab('dealers', this)">Дилеры</button>
+    <button onclick="showTab('analytics', this)">Аналитика</button>
+    <button onclick="showTab('who', this)">Отчёты</button>
+  </div>
+  <div class="content">
+    <div id="tab-summary" class="tab active"><div class="loading">Загрузка...</div></div>
+    <div id="tab-dealers" class="tab"><div class="loading">Загрузка...</div></div>
+    <div id="tab-analytics" class="tab"><div class="loading">Загрузка...</div></div>
+    <div id="tab-who" class="tab"><div class="loading">Загрузка...</div></div>
+  </div>
+</div>
+
+<script>
+const SHEET_ID = '1Tg02rOocxV8s1WBAquvdQX5JjET_gxgKS3ipPL1ajxg';
+const API_KEY = 'AIzaSyD-placeholder'; // заменим позже
+const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+
+const ALL_DEALERS = [
+  'KAIYI Astana','KAIYI Uralsk','KAIYI Qaragandy','KAIYI Pavlodar',
+  'KAIYI Atyrau','KAIYI Oskemen','KAIYI Shymkent','KAIYI Kostanay',
+  'KAIYI Besagash','KAIYI Aktau','KAIYI Almaty Suyunbay','KAIYI Taraz'
+];
+
+let allData = [];
+let contractChart = null;
+let convChart = null;
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+async function loadData() {
+  try {
+    const res = await fetch(SHEET_URL);
+    const text = await res.text();
+    const json = JSON.parse(text.substring(47).slice(0, -2));
+    const rows = json.table.rows;
+    allData = rows.slice(1).map(row => ({
+      date: row.c[0]?.v || '',
+      dc: row.c[1]?.v || '',
+      rl: Number(row.c[2]?.v) || 0,
+      visits: Number(row.c[3]?.v) || 0,
+      calls: Number(row.c[4]?.v) || 0,
+      internet: Number(row.c[5]?.v) || 0,
+      bank: Number(row.c[6]?.v) || 0,
+      approved: Number(row.c[7]?.v) || 0,
+      td: Number(row.c[8]?.v) || 0,
+      contracts: Number(row.c[9]?.v) || 0,
+      deliveries: Number(row.c[10]?.v) || 0,
+      rejections: Number(row.c[11]?.v) || 0,
+      plan: Number(row.c[12]?.v) || 0,
+      forecastSales: Number(row.c[15]?.v) || 0,
+      stock: Number(row.c[17]?.v) || 0
+    }));
+    renderAll();
+  } catch(e) {
+    document.querySelectorAll('.tab').forEach(t => t.innerHTML = '<div class="loading">Ошибка загрузки данных</div>');
+  }
+}
+
+function getMonthRows() {
+  const now = new Date();
+  return allData.filter(r => {
+    if (!r.date) return false;
+    const p = r.date.toString().split('.');
+    if (p.length < 3) return false;
+    return parseInt(p[1]) === now.getMonth()+1 && parseInt(p[2]) === now.getFullYear();
+  });
+}
+
+function getLatestDate(rows) {
+  const dates = [...new Set(rows.map(r => r.date))].sort();
+  return dates[dates.length - 1] || '';
+}
+
+function renderAll() {
+  const monthRows = getMonthRows();
+  const latestDate = getLatestDate(monthRows);
+  const todayRows = monthRows.filter(r => r.date === latestDate);
+
+  document.getElementById('header-date').textContent = `Дистрибьютор — ${latestDate}`;
+
+  renderSummary(todayRows, monthRows, latestDate);
+  renderDealers(todayRows, monthRows);
+  renderAnalytics(monthRows);
+  renderWho(todayRows, latestDate);
+}
+
+function getDealerMTD(monthRows) {
+  const mtd = {};
+  monthRows.forEach(r => {
+    if (!mtd[r.dc]) mtd[r.dc] = { contracts: 0, deliveries: 0, rejections: 0, rl: 0, visits: 0, td: 0, plan: 0, stock: 0, forecast: 0 };
+    mtd[r.dc].contracts += r.contracts;
+    mtd[r.dc].deliveries += r.deliveries;
+    mtd[r.dc].rejections += r.rejections;
+    mtd[r.dc].rl += r.rl;
+    mtd[r.dc].visits += r.visits;
+    mtd[r.dc].td += r.td;
+    mtd[r.dc].plan = r.plan || mtd[r.dc].plan;
+    mtd[r.dc].stock = r.stock || mtd[r.dc].stock;
+    mtd[r.dc].forecast = r.forecastSales || mtd[r.dc].forecast;
+  });
+  return mtd;
+}
+
+function renderSummary(todayRows, monthRows, latestDate) {
+  const seen = {};
+  const unique = todayRows.filter(r => { if(seen[r.dc]) return false; seen[r.dc]=true; return true; });
+
+  let totalRL=0, totalVisits=0, totalCalls=0, totalInternet=0;
+  let totalBank=0, totalApproved=0, totalTD=0, totalContracts=0, totalDeliveries=0;
+  unique.forEach(r => {
+    totalRL += r.rl; totalVisits += r.visits; totalCalls += r.calls;
+    totalInternet += r.internet; totalBank += r.bank; totalApproved += r.approved;
+    totalTD += r.td; totalContracts += r.contracts; totalDeliveries += r.deliveries;
+  });
+
+  const mtd = getDealerMTD(monthRows);
+  let totalMtdContracts=0, totalMtdDeliveries=0, totalMtdRejections=0, totalPlan=0;
+  Object.values(mtd).forEach(d => {
+    totalMtdContracts += d.contracts;
+    totalMtdDeliveries += d.deliveries;
+    totalMtdRejections += d.rejections;
+    totalPlan += d.plan;
+  });
+  const netCC = totalMtdContracts - totalMtdRejections - totalMtdDeliveries;
+  const pct = totalPlan > 0 ? Math.round((totalMtdContracts/totalPlan)*100) : 0;
+
+  // Контракты по дням
+  const dayMap = {};
+  monthRows.forEach(r => {
+    if (!dayMap[r.date]) dayMap[r.date] = 0;
+    dayMap[r.date] += r.contracts;
+  });
+  const dayLabels = Object.keys(dayMap).sort();
+  const dayValues = dayLabels.map(d => dayMap[d]);
+
+  document.getElementById('tab-summary').innerHTML = `
+    <div class="metric-grid">
+      <div class="metric-card"><div class="metric-label">РЛ за день</div><div class="metric-value">${totalRL}</div><div class="metric-sub">все дилеры</div></div>
+      <div class="metric-card"><div class="metric-label">Контракты день</div><div class="metric-value green">${totalContracts}</div><div class="metric-sub">${latestDate}</div></div>
+      <div class="metric-card"><div class="metric-label">Контракты MTD</div><div class="metric-value">${totalMtdContracts}</div><div class="metric-sub">план: ${totalPlan}</div></div>
+      <div class="metric-card"><div class="metric-label">Net CC</div><div class="metric-value ${netCC > 0 ? 'green' : 'red'}">${netCC}</div><div class="metric-sub">контр - откз - выд</div></div>
+    </div>
+    <div class="metric-grid">
+      <div class="metric-card"><div class="metric-label">Визиты</div><div class="metric-value">${totalVisits}</div></div>
+      <div class="metric-card"><div class="metric-label">Тест-драйвы</div><div class="metric-value">${totalTD}</div></div>
+      <div class="metric-card"><div class="metric-label">Подводы банк</div><div class="metric-value">${totalBank}</div></div>
+      <div class="metric-card"><div class="metric-label">Одобрения</div><div class="metric-value">${totalApproved}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Выполнение плана MTD</div>
+      <div class="plan-bar">
+        <div class="plan-bar-label"><span>Контракты ${totalMtdContracts} / ${totalPlan}</span><span>${pct}%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>
+      </div>
+      <div style="position:relative;height:180px;margin-top:12px">
+        <canvas id="contractChart" role="img" aria-label="Контракты по дням">Контракты по дням апреля</canvas>
+      </div>
+    </div>
+  `;
+
+  if (contractChart) contractChart.destroy();
+  contractChart = new Chart(document.getElementById('contractChart'), {
+    type: 'bar',
+    data: {
+      labels: dayLabels.map(d => d.substring(0,5)),
+      datasets: [{ label: 'Контракты', data: dayValues, backgroundColor: '#e31e24', borderRadius: 4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } }, grid: { color: '#f5f5f5' } },
+        x: { ticks: { font: { size: 9 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderDealers(todayRows, monthRows) {
+  const mtd = getDealerMTD(monthRows);
+  const seen = {};
+  const unique = todayRows.filter(r => { if(seen[r.dc]) return false; seen[r.dc]=true; return true; });
+
+  let html = '';
+  unique.sort((a,b) => (mtd[b.dc]?.contracts||0) - (mtd[a.dc]?.contracts||0)).forEach(r => {
+    const m = mtd[r.dc] || {};
+    const netCC = (m.contracts||0) - (m.rejections||0) - (m.deliveries||0);
+    const pct = m.plan > 0 ? Math.round((m.contracts/m.plan)*100) : 0;
+    const badgeClass = m.contracts > 0 ? 'green' : 'red';
+    html += `
+      <div class="dealer-card">
+        <div class="dealer-name">${r.dc}<span class="badge ${badgeClass}">${m.contracts} MTD</span></div>
+        <div class="dealer-row"><span>РЛ сегодня</span><span>${r.rl}</span></div>
+        <div class="dealer-row"><span>Визиты</span><span>${r.visits}</span></div>
+        <div class="dealer-row"><span>Контракт день</span><span>${r.contracts}</span></div>
+        <div class="dealer-row"><span>MTD контракты</span><span>${m.contracts||0}</span></div>
+        <div class="dealer-row"><span>Выдачи MTD</span><span>${m.deliveries||0}</span></div>
+        <div class="dealer-row"><span>Отказы MTD</span><span>${m.rejections||0}</span></div>
+        <div class="dealer-row"><span>Net CC</span><span>${netCC}</span></div>
+        <div class="dealer-row"><span>Прогноз</span><span>${r.forecastSales}</span></div>
+        <div class="dealer-row"><span>Склад</span><span>${r.stock} шт.</span></div>
+        <div class="plan-bar-label" style="font-size:11px;color:#888;margin-top:6px"><span>План: ${m.plan||0}</span><span>${pct}%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>
+      </div>`;
+  });
+  document.getElementById('tab-dealers').innerHTML = html || '<div class="loading">Нет данных</div>';
+}
+
+function renderAnalytics(monthRows) {
+  const mtd = getDealerMTD(monthRows);
+  const sorted = Object.entries(mtd).sort((a,b) => b[1].contracts - a[1].contracts);
+
+  let topHtml = sorted.map(([dc, d], i) => {
+    const medals = ['🥇','🥈','🥉'];
+    const num = medals[i] || `${i+1}.`;
+    const pct = d.plan > 0 ? Math.round((d.contracts/d.plan)*100) : 0;
+    return `<div class="top-item"><div class="top-num">${num}</div><div class="top-name">${dc.replace('KAIYI ','')}</div><div class="top-val">${d.contracts} <span style="font-size:10px;color:#888">(${pct}%)</span></div></div>`;
+  }).join('');
+
+  const convLabels = sorted.map(([dc]) => dc.replace('KAIYI ',''));
+  const convData = sorted.map(([, d]) => d.rl > 0 ? Math.round((d.contracts/d.rl)*100*10)/10 : 0);
+
+  document.getElementById('tab-analytics').innerHTML = `
+    <div class="card">
+      <div class="card-title">Топ дилеров по контрактам MTD</div>
+      ${topHtml}
+    </div>
+    <div class="card">
+      <div class="card-title">Конверсия РЛ → Контракт %</div>
+      <div style="position:relative;height:${Math.max(sorted.length*35+40,200)}px">
+        <canvas id="convChart" role="img" aria-label="Конверсия по дилерам">Конверсия</canvas>
+      </div>
+    </div>
+  `;
+
+  if (convChart) convChart.destroy();
+  convChart = new Chart(document.getElementById('convChart'), {
+    type: 'bar',
+    data: {
+      labels: convLabels,
+      datasets: [{ label: 'РЛ→Контракт %', data: convData, backgroundColor: '#e31e24', borderRadius: 4 }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: '#f5f5f5' } },
+        y: { ticks: { font: { size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderWho(todayRows, latestDate) {
+  const reported = [...new Set(todayRows.map(r => r.dc))];
+  const notReported = ALL_DEALERS.filter(d => !reported.includes(d));
+
+  let html = `<div class="card"><div class="card-title">Статус отчётов — ${latestDate}</div>`;
+  html += `<div style="font-size:12px;color:#2e7d32;margin-bottom:6px">Сдали: ${reported.length}</div>`;
+  reported.forEach(d => html += `<div class="who-item"><div class="dot green"></div>${d}</div>`);
+  if (notReported.length > 0) {
+    html += `<div style="font-size:12px;color:#e31e24;margin:10px 0 6px">Не сдали: ${notReported.length}</div>`;
+    notReported.forEach(d => html += `<div class="who-item"><div class="dot red"></div>${d}</div>`);
+  }
+  html += '</div>';
+  document.getElementById('tab-who').innerHTML = html;
+}
+
+loadData();
+setInterval(loadData, 60000);
+</script>
+</body>
+</html>
